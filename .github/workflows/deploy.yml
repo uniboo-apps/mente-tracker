@@ -27,8 +27,8 @@ jobs:
           npx -y wrangler@4 pages deploy . --project-name="$NAME" --branch=main --commit-dirty=true
           # Set runtime secrets on Cloudflare Pages (idempotent)
           if [ -n "$NOTION_TOKEN" ]; then
-            echo "$NOTION_TOKEN" | npx -y wrangler@4 pages secret put NOTION_TOKEN --project-name="$NAME"
+            printf '%s' "$NOTION_TOKEN" | npx -y wrangler@4 pages secret put NOTION_TOKEN --project-name="$NAME"
           fi
           if [ -n "$APP_PASSCODE" ]; then
-            echo "$APP_PASSCODE" | npx -y wrangler@4 pages secret put APP_PASSCODE --project-name="$NAME"
+            printf '%s' "$APP_PASSCODE" | npx -y wrangler@4 pages secret put APP_PASSCODE --project-name="$NAME"
           fi
