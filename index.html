@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f172a">
+<title>定期メンテ</title>
+<style>
+  :root {
+    --bg:#0f172a; --card:#1e293b; --card2:#243043; --text:#e2e8f0; --muted:#94a3b8;
+    --red:#ef4444; --amber:#f59e0b; --green:#22c55e; --gray:#64748b; --accent:#38bdf8;
+  }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Hiragino Kaku Gothic ProN","Meiryo",sans-serif;
+    padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
+  header { position:sticky; top:0; background:rgba(15,23,42,.92); backdrop-filter:blur(8px);
+    padding:14px 16px 10px; z-index:10; border-bottom:1px solid #ffffff14; }
+  header h1 { margin:0; font-size:20px; display:flex; align-items:center; gap:8px; }
+  header .sub { color:var(--muted); font-size:12px; margin-top:2px; }
+  .wrap { padding:12px 12px 90px; max-width:640px; margin:0 auto; }
+  .card { background:var(--card); border-radius:14px; padding:14px; margin-bottom:10px;
+    border-left:5px solid var(--gray); box-shadow:0 1px 3px #0006; }
+  .card.red    { border-left-color:var(--red); }
+  .card.amber  { border-left-color:var(--amber); }
+  .card.green  { border-left-color:var(--green); }
+  .card.gray   { border-left-color:var(--gray); opacity:.78; }
+  .row1 { display:flex; align-items:baseline; justify-content:space-between; gap:10px; }
+  .name { font-size:17px; font-weight:700; }
+  .badge { font-size:13px; font-weight:700; white-space:nowrap; }
+  .badge.red{color:var(--red);} .badge.amber{color:var(--amber);}
+  .badge.green{color:var(--green);} .badge.gray{color:var(--muted);}
+  .meta { color:var(--muted); font-size:12.5px; margin-top:4px; }
+  .memo { font-size:13px; margin-top:8px; white-space:pre-wrap; color:#cbd5e1;
+    background:#0b1220; padding:8px 10px; border-radius:8px; }
+  .actions { display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; }
+  button, .btn { font:inherit; border:none; border-radius:10px; padding:9px 12px; font-size:13.5px;
+    font-weight:600; cursor:pointer; color:#fff; background:var(--card2); }
+  .btn-done { background:var(--green); color:#06210f; }
+  .btn-link { background:#334155; text-decoration:none; display:inline-block; }
+  .btn-edit { background:#334155; }
+  .fab { position:fixed; right:18px; bottom:calc(18px + env(safe-area-inset-bottom));
+    width:56px; height:56px; border-radius:50%; background:var(--accent); color:#06283a;
+    font-size:30px; line-height:56px; text-align:center; box-shadow:0 4px 14px #0008; z-index:20; }
+  .empty,.loading { text-align:center; color:var(--muted); padding:40px 0; }
+  /* modal */
+  .modal-bg { position:fixed; inset:0; background:#000a; display:none; align-items:flex-end;
+    justify-content:center; z-index:30; }
+  .modal-bg.open { display:flex; }
+  .modal { background:var(--card); width:100%; max-width:640px; border-radius:16px 16px 0 0;
+    padding:18px 16px calc(18px + env(safe-area-inset-bottom)); }
+  .modal h2 { margin:0 0 14px; font-size:17px; }
+  label { display:block; font-size:12px; color:var(--muted); margin:10px 0 4px; }
+  input, textarea { width:100%; background:#0b1220; border:1px solid #334155; border-radius:8px;
+    color:var(--text); padding:9px 10px; font:inherit; }
+  textarea { min-height:70px; resize:vertical; }
+  .modal .actions { justify-content:flex-end; margin-top:16px; }
+  .btn-save { background:var(--accent); color:#06283a; }
+  .btn-cancel { background:#334155; }
+  .toast { position:fixed; left:50%; bottom:90px; transform:translateX(-50%);
+    background:#111827; color:#fff; padding:10px 16px; border-radius:20px; font-size:13px;
+    opacity:0; transition:opacity .2s; z-index:40; pointer-events:none; }
+  .toast.show { opacity:1; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🛠️ 定期メンテ</h1>
+  <div class="sub" id="sub">読み込み中…</div>
+</header>
+<div class="wrap" id="list"><div class="loading">読み込み中…</div></div>
+<div class="fab" id="fab">＋</div>
+
+<div class="modal-bg" id="modalBg">
+  <div class="modal">
+    <h2 id="modalTitle">編集</h2>
+    <input type="hidden" id="f_id">
+    <label>名前</label><input id="f_name" type="text">
+    <label>最終メンテ日</label><input id="f_last" type="date">
+    <label>周期（日数）</label><input id="f_cycle" type="number" inputmode="numeric" placeholder="例: 30 / 45 / 365">
+    <label>取説・お手入れURL</label><input id="f_url" type="url" placeholder="https://…">
+    <label>メモ（手順など）</label><textarea id="f_memo"></textarea>
+    <div class="actions">
+      <button class="btn-cancel" id="btnCancel">キャンセル</button>
+      <button class="btn-save" id="btnSave">保存</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+let PASS = localStorage.getItem("mente_pass") || "";
+let ITEMS = [];
+
+function headers() {
+  const h = { "Content-Type": "application/json" };
+  if (PASS) h["x-app-pass"] = PASS;
+  return h;
+}
+async function api(path, body) {
+  const r = await fetch("/api/" + path, { method:"POST", headers:headers(), body:JSON.stringify(body||{}) });
+  if (r.status === 401) {
+    const p = prompt("合言葉を入力してください");
+    if (p) { PASS = p; localStorage.setItem("mente_pass", p); return api(path, body); }
+    throw new Error("unauthorized");
+  }
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.detail || data.error || ("HTTP " + r.status));
+  return data;
+}
+function toast(msg) {
+  const t = $("#toast"); t.textContent = msg; t.classList.add("show");
+  setTimeout(()=>t.classList.remove("show"), 1800);
+}
+const today = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
+function daysBetween(a, b) { return Math.round((b - a) / 86400000); }
+
+// 次回予定・残り日数・状態を計算
+function calc(it) {
+  if (!it.lastDate || it.cycleDays == null) return { state:"gray", label:"未設定", remain:null, due:null };
+  const last = new Date(it.lastDate + "T00:00:00");
+  const due = new Date(last); due.setDate(due.getDate() + it.cycleDays);
+  const now = new Date(today() + "T00:00:00");
+  const remain = daysBetween(now, due);
+  let state;
+  if (remain < 0) state = "red";
+  else if (remain <= 7) state = "amber";
+  else state = "green";
+  let label;
+  if (remain < 0) label = `${-remain}日 超過`;
+  else if (remain === 0) label = "今日";
+  else label = `あと${remain}日`;
+  return { state, label, remain, due:`${due.getFullYear()}-${String(due.getMonth()+1).padStart(2,"0")}-${String(due.getDate()).padStart(2,"0")}` };
+}
+
+function order(s){ return {red:0, amber:1, green:2, gray:3}[s]; }
+
+async function load() {
+  try {
+    const { items } = await api("list");
+    ITEMS = items;
+    render();
+  } catch (e) {
+    $("#list").innerHTML = `<div class="empty">読み込み失敗: ${e.message}</div>`;
+    $("#sub").textContent = "エラー";
+  }
+}
+
+function render() {
+  const enriched = ITEMS.map(it => ({ it, c: calc(it) }));
+  enriched.sort((a,b) => order(a.c.state)-order(b.c.state) || ((a.c.remain??1e9)-(b.c.remain??1e9)));
+  const overdue = enriched.filter(e => e.c.state==="red").length;
+  const soon = enriched.filter(e => e.c.state==="amber").length;
+  $("#sub").textContent = `全${ITEMS.length}件　🔴超過${overdue}　🟡まもなく${soon}`;
+
+  $("#list").innerHTML = enriched.map(({it,c}) => `
+    <div class="card ${c.state}">
+      <div class="row1">
+        <span class="name">${esc(it.name)||"(無題)"}</span>
+        <span class="badge ${c.state}">${c.label}</span>
+      </div>
+      <div class="meta">
+        ${it.cycleDays!=null ? `周期 ${it.cycleDays}日` : "周期 未設定"} ・
+        前回 ${it.lastDate||"—"}${c.due ? ` ・ 次回 ${c.due}` : ""}
+      </div>
+      ${it.memo ? `<div class="memo">${esc(it.memo)}</div>` : ""}
+      <div class="actions">
+        <button class="btn-done" onclick="done('${it.id}')">✅ 今日やった</button>
+        ${it.url ? `<a class="btn btn-link" href="${esc(it.url)}" target="_blank" rel="noopener">📖 取説</a>` : ""}
+        <button class="btn-edit" onclick="openEdit('${it.id}')">✏️ 編集</button>
+      </div>
+    </div>`).join("") || `<div class="empty">項目がありません</div>`;
+}
+function esc(s){ return (s||"").replace(/[&<>"']/g, m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])); }
+
+async function done(id) {
+  const it = ITEMS.find(x=>x.id===id);
+  if (!confirm(`「${it.name}」を今日(${today()})やったことにします。よろしいですか？`)) return;
+  try {
+    await api("update", { id, lastDate: today() });
+    it.lastDate = today();
+    render(); toast("更新しました ✅");
+  } catch(e){ toast("失敗: "+e.message); }
+}
+
+// ---- modal ----
+function openEdit(id) {
+  const it = id ? ITEMS.find(x=>x.id===id) : null;
+  $("#modalTitle").textContent = it ? "編集" : "新規追加";
+  $("#f_id").value = it?.id || "";
+  $("#f_name").value = it?.name || "";
+  $("#f_last").value = it?.lastDate || "";
+  $("#f_cycle").value = it?.cycleDays ?? "";
+  $("#f_url").value = it?.url || "";
+  $("#f_memo").value = it?.memo || "";
+  $("#modalBg").classList.add("open");
+}
+function closeModal(){ $("#modalBg").classList.remove("open"); }
+
+async function save() {
+  const id = $("#f_id").value;
+  const payload = {
+    name: $("#f_name").value.trim(),
+    lastDate: $("#f_last").value || null,
+    cycleDays: $("#f_cycle").value === "" ? null : Number($("#f_cycle").value),
+    url: $("#f_url").value.trim() || null,
+    memo: $("#f_memo").value,
+  };
+  if (!payload.name) { toast("名前を入力してください"); return; }
+  try {
+    if (id) await api("update", { id, ...payload });
+    else await api("create", payload);
+    closeModal(); toast("保存しました"); await load();
+  } catch(e){ toast("失敗: "+e.message); }
+}
+
+$("#fab").onclick = () => openEdit(null);
+$("#btnCancel").onclick = closeModal;
+$("#btnSave").onclick = save;
+$("#modalBg").onclick = e => { if (e.target === $("#modalBg")) closeModal(); };
+
+load();
+</script>
+</body>
+</html>
