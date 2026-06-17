@@ -22,8 +22,15 @@
     padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
   header { position:sticky; top:0; background:rgba(15,23,42,.92); backdrop-filter:blur(8px);
     padding:14px 16px 10px; z-index:10; border-bottom:1px solid #ffffff14; }
+  .headerRow { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }
   header h1 { margin:0; font-size:20px; display:flex; align-items:center; gap:8px; }
   header .sub { color:var(--muted); font-size:12px; margin-top:2px; }
+  .kebab { background:transparent; color:var(--text); font-size:22px; line-height:1; padding:4px 10px;
+    border-radius:8px; margin-top:-2px; }
+  .kebab:active { background:#ffffff1f; }
+  .visRow { display:flex; align-items:center; gap:10px; padding:9px 4px; border-bottom:1px solid #ffffff0f; }
+  .visRow input { width:auto; }
+  .visRow span { flex:1; font-size:14.5px; }
   .wrap { padding:12px 12px 90px; max-width:640px; margin:0 auto; }
   .card { background:var(--card); border-radius:14px; padding:14px; margin-bottom:10px;
     border-left:5px solid var(--gray); box-shadow:0 1px 3px #0006; }
@@ -71,8 +78,13 @@
 </head>
 <body>
 <header>
-  <h1>🛠️ 定期メンテ</h1>
-  <div class="sub" id="sub">読み込み中…</div>
+  <div class="headerRow">
+    <div>
+      <h1>🛠️ 定期メンテ</h1>
+      <div class="sub" id="sub">読み込み中…</div>
+    </div>
+    <button class="kebab" id="kebabBtn" aria-label="表示項目を選択">⋮</button>
+  </div>
 </header>
 <div class="wrap" id="list"><div class="loading">読み込み中…</div></div>
 <div class="fab" id="fab">＋</div>
@@ -92,12 +104,24 @@
     </div>
   </div>
 </div>
+<div class="modal-bg" id="visBg">
+  <div class="modal">
+    <h2>表示するメンテ項目</h2>
+    <div id="visList"></div>
+    <div class="actions">
+      <button class="btn-cancel" id="btnVisClose">閉じる</button>
+    </div>
+  </div>
+</div>
 <div class="toast" id="toast"></div>
 
 <script>
 const $ = s => document.querySelector(s);
 let PASS = localStorage.getItem("mente_pass") || "";
 let ITEMS = [];
+let HIDDEN = new Set(JSON.parse(localStorage.getItem("mente_hidden") || "[]"));
+function saveHidden(){ localStorage.setItem("mente_hidden", JSON.stringify([...HIDDEN])); }
+function toggleHidden(id, visible){ if (visible) HIDDEN.delete(id); else HIDDEN.add(id); saveHidden(); render(); }
 
 function headers() {
   const h = { "Content-Type": "application/json" };
@@ -154,11 +178,12 @@ async function load() {
 }
 
 function render() {
-  const enriched = ITEMS.map(it => ({ it, c: calc(it) }));
+  const visible = ITEMS.filter(it => !HIDDEN.has(it.id));
+  const enriched = visible.map(it => ({ it, c: calc(it) }));
   enriched.sort((a,b) => order(a.c.state)-order(b.c.state) || ((a.c.remain??1e9)-(b.c.remain??1e9)));
   const overdue = enriched.filter(e => e.c.state==="red").length;
   const soon = enriched.filter(e => e.c.state==="amber").length;
-  $("#sub").textContent = `全${ITEMS.length}件　🔴超過${overdue}　🟡まもなく${soon}`;
+  $("#sub").textContent = `表示${visible.length}/全${ITEMS.length}件　🔴超過${overdue}　🟡まもなく${soon}`;
 
   $("#list").innerHTML = enriched.map(({it,c}) => `
     <div class="card ${c.state}">
@@ -204,6 +229,16 @@ function openEdit(id) {
 }
 function closeModal(){ $("#modalBg").classList.remove("open"); }
 
+// ---- visibility (show/hide items) ----
+function openVisibility() {
+  $("#visList").innerHTML = ITEMS.map(it => `
+    <label class="visRow">
+      <input type="checkbox" ${HIDDEN.has(it.id)?"":"checked"} onchange="toggleHidden('${it.id}', this.checked)">
+      <span>${esc(it.name)||"(無題)"}</span>
+    </label>`).join("") || `<div class="empty">項目がありません</div>`;
+  $("#visBg").classList.add("open");
+}
+
 async function save() {
   const id = $("#f_id").value;
   const payload = {
@@ -225,6 +260,9 @@ $("#fab").onclick = () => openEdit(null);
 $("#btnCancel").onclick = closeModal;
 $("#btnSave").onclick = save;
 $("#modalBg").onclick = e => { if (e.target === $("#modalBg")) closeModal(); };
+$("#kebabBtn").onclick = openVisibility;
+$("#btnVisClose").onclick = () => $("#visBg").classList.remove("open");
+$("#visBg").onclick = e => { if (e.target === $("#visBg")) $("#visBg").classList.remove("open"); };
 
 load();
 
