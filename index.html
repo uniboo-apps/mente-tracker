@@ -166,6 +166,13 @@ function calc(it) {
 
 function order(s){ return {red:0, amber:1, green:2, gray:3}[s]; }
 
+// 緊急度順（カード表示と同じ基準）: 🔴超過 > 🟡まもなく > 🟢余裕 > ⚪未設定、同色内は残り日数が少ない順
+function sortedItems() {
+  return ITEMS.map(it => ({ it, c: calc(it) }))
+    .sort((a,b) => order(a.c.state)-order(b.c.state) || ((a.c.remain??1e9)-(b.c.remain??1e9)))
+    .map(e => e.it);
+}
+
 async function load() {
   try {
     const { items } = await api("list");
@@ -178,9 +185,8 @@ async function load() {
 }
 
 function render() {
-  const visible = ITEMS.filter(it => !HIDDEN.has(it.id));
+  const visible = sortedItems().filter(it => !HIDDEN.has(it.id));
   const enriched = visible.map(it => ({ it, c: calc(it) }));
-  enriched.sort((a,b) => order(a.c.state)-order(b.c.state) || ((a.c.remain??1e9)-(b.c.remain??1e9)));
   const overdue = enriched.filter(e => e.c.state==="red").length;
   const soon = enriched.filter(e => e.c.state==="amber").length;
   $("#sub").textContent = `表示${visible.length}/全${ITEMS.length}件　🔴超過${overdue}　🟡まもなく${soon}`;
@@ -231,7 +237,7 @@ function closeModal(){ $("#modalBg").classList.remove("open"); }
 
 // ---- visibility (show/hide items) ----
 function openVisibility() {
-  $("#visList").innerHTML = ITEMS.map(it => `
+  $("#visList").innerHTML = sortedItems().map(it => `
     <label class="visRow">
       <input type="checkbox" ${HIDDEN.has(it.id)?"":"checked"} onchange="toggleHidden('${it.id}', this.checked)">
       <span>${esc(it.name)||"(無題)"}</span>
