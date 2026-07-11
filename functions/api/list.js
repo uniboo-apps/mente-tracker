@@ -5,9 +5,6 @@ const NV = "2022-06-28";
 function rt(arr) { return (arr || []).map(x => x.plain_text).join(""); }
 
 export async function onRequestPost({ request, env }) {
-  const bad = await guard(request, env);
-  if (bad) return bad;
-
   const res = await fetch(`https://api.notion.com/v1/databases/${DB_ID}/query`, {
     method: "POST",
     headers: {
@@ -18,8 +15,8 @@ export async function onRequestPost({ request, env }) {
     body: JSON.stringify({ page_size: 100 }),
   });
   if (!res.ok) {
-    const t = await res.text();
-    return json({ error: "notion", status: res.status, detail: t }, 502);
+    console.log("notion error", res.status, await res.text());
+    return json({ error: "notion", status: res.status }, 502);
   }
   const data = await res.json();
   const items = data.results.map(pg => {
@@ -42,10 +39,4 @@ function json(obj, status = 200) {
     status,
     headers: { "Content-Type": "application/json; charset=utf-8" },
   });
-}
-async function guard(request, env) {
-  if (!env.APP_PASSCODE) return null; // 未設定なら認証なし（ローカル開発用）
-  const got = request.headers.get("x-app-pass") || "";
-  if (got !== env.APP_PASSCODE) return json({ error: "unauthorized" }, 401);
-  return null;
 }
