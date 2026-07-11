@@ -28,7 +28,7 @@ jobs:
           # approved public files in _site (security review fix, 2026-07-11). Add new
           # public files to the copy list above before deploying them.
           mkdir -p _site
-          cp index.html manifest.json sw.js icon-192.png icon-512.png _site/
+          cp index.html 404.html manifest.json sw.js icon-192.png icon-512.png _site/
           cp -r functions _site/functions
           npx -y wrangler@4 pages deploy _site --project-name="$NAME" --branch=main --commit-dirty=true
           # Set runtime secrets on Cloudflare Pages (idempotent)
