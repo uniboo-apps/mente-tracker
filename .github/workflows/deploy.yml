@@ -16,7 +16,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 3441724797f692af21f432e8625165d9
           NAME: ${{ github.event.repository.name }}
-          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_TOKEN: ${{ secrets.MENTE_NOTION_TOKEN }}
           APP_PASSCODE: ${{ secrets.APP_PASSCODE }}
         run: |
           if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
