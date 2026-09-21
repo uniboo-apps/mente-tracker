@@ -1,47 +1,10 @@
-# 定期メンテ管理アプリ (mente-tracker)
+﻿# mente-tracker — エージェント入口
 
-Notion「定期メンテ」DB と連動する、家のモノの定期お手入れ管理ダッシュボード。
+この repo／配下を作業対象にしたら、以下をすべて読み、共通方針の resolver を対象パスで実行する。親を読んだだけで「ルールなし」と判断しない。
 
-## 何のアプリか
+- [必読: 私用共通・優先順位・条件別ルール](C:/work/Claude/docs/agent-rules/workspace.md)
+- [必読: この repo の固有ルール](docs/agent-rules.md)
 
-- 最終メンテ日 ＋ 周期日数 から「次回予定日／残り日数」を自動計算し、期限の近い順に色分け表示（🔴超過 / 🟡7日以内 / 🟢余裕 / ⚪未設定）。
-- 「✅ 今日やった」ボタンで最終メンテ日を今日に書き戻し（Notionを開かず完結）。
-- ✏️編集・＋追加で項目を管理。取説リンク・メモ（手順）もカードに表示。
-- スマホ縦・PWA前提のUI。
+`CLAUDE.md` は本書を読むためだけのアダプター。恒久ルールは上記正本へ、一時経緯は参考文書へ書く。
 
-## 構成
-
-- `index.html` … ダッシュボード本体（バニラJS、依存なし）。
-- `functions/api/list.js` … Notion DBクエリ（POST）。
-- `functions/api/update.js` … ページ更新（POST）。「今日やった」もこれ。
-- `functions/api/create.js` … 新規項目追加（POST）。
-- Cloudflare Pages（静的）＋ Pages Functions が Notion トークンを隠して中継。
-
-## Notion DB
-
-- DB id: `3234b6f3-2895-80b2-8880-cd22acf84b21`（統合「定期メンテ専用」トークン。値はDPAPI秘密保管庫の `notion_token_mente_tracker` を参照）
-- プロパティ: 名前(title) / 最終メンテ日(date) / 周期日数(number) / メンテ周期(rich_text・旧自由文) / 取説_お手入れ(url) / メモ(rich_text)
-- 日数計算は **周期日数(number)** を使う。旧「メンテ周期」自由文は参考表示のみ。
-
-## 環境変数（Cloudflare Pages の設定で登録）
-
-- `NOTION_TOKEN`（必須）… Notion統合トークン。
-- `APP_PASSCODE`（任意）… 設定すると合言葉ガードが有効。未設定なら誰でもアクセス可。
-  - ローカル開発(`.dev.vars`)では未設定＝認証なし。
-
-## ローカル開発・テスト
-
-```powershell
-# .dev.vars に NOTION_TOKEN を入れて（.gitignore 済み）
-cd c:\work\Claude\mente-tracker
-wrangler pages dev . --port 8788 --compatibility-date 2024-01-01
-# → http://127.0.0.1:8788
-```
-
-`file://` ではなく必ず Functions込みの wrangler で起動すること（/api/* が動かないため）。
-
-## デプロイ
-
-Cloudflare Pages（GitHub連携 or `wrangler pages deploy .`）。デプロイ後、Pages の
-Settings → Environment variables に `NOTION_TOKEN`（と必要なら `APP_PASSCODE`）を登録する。
-コミットメッセージは ASCII（英数字）で書く（Cloudflare Pages デプロイ失敗回避）。
+- [必読: 文書の分類・条件付き参照索引](docs/agent-documents.md)

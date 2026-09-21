@@ -1,3 +1,5 @@
+﻿> 分類: 限定タスク計画／当時の記録（完了未判定）。現在の入口から先にルールを確認する。通常作業の行動許可は [共通方針](C:/work/Claude/docs/agent-rules/workspace.md) だけが与え、repo 固有の例外・追加条件は [固有ルール](agent-rules.md)。本書は許可を与えない。本文のフェーズ順・対象制限は明示再開時にだけ適用し、恒久的なデータ保護・製品契約は関連機能の変更前に確認する。
+
 # mente-tracker セキュリティ・品質改善 実装指示書
 
 2026-07-11 のコードレビューで見つかった改善点の実装手順。上から順に実施する。
@@ -8,7 +10,7 @@
 - 対象リポジトリ: `C:\work\Claude\mente-tracker`
 - 本番: https://mente-tracker.pages.dev （Cloudflare Pages、main への push で GitHub Actions が自動デプロイ）
 - コミットメッセージは **ASCII（英数字）のみ**（非ASCIIだと Cloudflare Pages デプロイが失敗する）
-- コード変更後は確認なしに git commit & push してよい（このリポジトリのルール）
+- commit/push は [共通正本](C:/work/Claude/docs/agent-rules/workspace.md) に従う。
 - トークン・合言葉の値をチャット・ログ・コミットに出さないこと
 - ⚠️ **この指示書（docs/）を単独で先に push しないこと**。現行の deploy.yml は
   リポジトリ全量を公開するため、指示書まで本番公開されてしまう。
