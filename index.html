@@ -117,26 +117,37 @@
 
 <script>
 const $ = s => document.querySelector(s);
-let PASS = localStorage.getItem("mente_pass") || "";
+let PASS = sessionStorage.getItem("mente_pass") || "";
+localStorage.removeItem("mente_pass");
 let ITEMS = [];
 let HIDDEN = new Set(JSON.parse(localStorage.getItem("mente_hidden") || "[]"));
 function saveHidden(){ localStorage.setItem("mente_hidden", JSON.stringify([...HIDDEN])); }
 function toggleHidden(id, visible){ if (visible) HIDDEN.delete(id); else HIDDEN.add(id); saveHidden(); render(); }
 
-function headers() {
+function headers(pass = PASS) {
   const h = { "Content-Type": "application/json" };
-  if (PASS) h["x-app-pass"] = PASS;
+  if (pass) h["x-app-pass"] = pass;
   return h;
 }
 async function api(path, body) {
-  const r = await fetch("/api/" + path, { method:"POST", headers:headers(), body:JSON.stringify(body||{}) });
+  const request = pass => fetch("/api/" + path, {
+    method:"POST", headers:headers(pass), body:JSON.stringify(body||{})
+  });
+  let r = await request();
   if (r.status === 401) {
     const p = prompt("合言葉を入力してください");
-    if (p) { PASS = p; localStorage.setItem("mente_pass", p); return api(path, body); }
-    throw new Error("unauthorized");
+    if (!p) throw new Error("unauthorized");
+    r = await request(p);
+    if (r.status === 401) {
+      PASS = "";
+      sessionStorage.removeItem("mente_pass");
+    } else if (r.status !== 503) {
+      PASS = p;
+      sessionStorage.setItem("mente_pass", p);
+    }
   }
   const data = await r.json();
-  if (!r.ok) throw new Error(data.detail || data.error || ("HTTP " + r.status));
+  if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
   return data;
 }
 function toast(msg) {
@@ -191,7 +202,9 @@ function render() {
   const soon = enriched.filter(e => e.c.state==="amber").length;
   $("#sub").textContent = `表示${visible.length}/全${ITEMS.length}件　🔴超過${overdue}　🟡まもなく${soon}`;
 
-  $("#list").innerHTML = enriched.map(({it,c}) => `
+  $("#list").innerHTML = enriched.map(({it,c}) => {
+    const url = safeHttpUrl(it.url);
+    return `
     <div class="card ${c.state}">
       <div class="row1">
         <span class="name">${esc(it.name)||"(無題)"}</span>
@@ -204,12 +217,22 @@ function render() {
       ${it.memo ? `<div class="memo">${esc(it.memo)}</div>` : ""}
       <div class="actions">
         <button class="btn-done" onclick="done('${it.id}')">✅ 今日やった</button>
-        ${it.url ? `<a class="btn btn-link" href="${esc(it.url)}" target="_blank" rel="noopener">📖 取説</a>` : ""}
+        ${url ? `<a class="btn btn-link" href="${esc(url)}" target="_blank" rel="noopener">📖 取説</a>` : ""}
         <button class="btn-edit" onclick="openEdit('${it.id}')">✏️ 編集</button>
       </div>
-    </div>`).join("") || `<div class="empty">項目がありません</div>`;
+    </div>`;
+  }).join("") || `<div class="empty">項目がありません</div>`;
 }
 function esc(s){ return (s||"").replace(/[&<>"']/g, m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])); }
+function safeHttpUrl(value) {
+  if (typeof value !== "string") return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.href : null;
+  } catch {
+    return null;
+  }
+}
 
 async function done(id) {
   const it = ITEMS.find(x=>x.id===id);

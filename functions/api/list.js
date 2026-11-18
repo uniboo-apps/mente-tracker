@@ -15,7 +15,7 @@ export async function onRequestPost({ request, env }) {
     body: JSON.stringify({ page_size: 100 }),
   });
   if (!res.ok) {
-    console.log("notion error", res.status, await res.text());
+    console.warn("Notion list request failed", res.status);
     return json({ error: "notion", status: res.status }, 502);
   }
   const data = await res.json();
@@ -37,6 +37,9 @@ export async function onRequestPost({ request, env }) {
 function json(obj, status = 200) {
   return new Response(JSON.stringify(obj), {
     status,
-    headers: { "Content-Type": "application/json; charset=utf-8" },
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": "no-store",
+    },
   });
 }

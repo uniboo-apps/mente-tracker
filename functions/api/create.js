@@ -7,7 +7,8 @@ export async function onRequestPost({ request, env }) {
   let body;
   try { body = await request.json(); } catch { return json({ error: "bad json" }, 400); }
   if (!body.name) return json({ error: "name required" }, 400);
-  if (body.url && !/^https?:\/\//i.test(body.url)) return json({ error: "bad url" }, 400);
+  if (body.url !== undefined && body.url !== null && body.url !== "" && !isHttpUrl(body.url))
+    return json({ error: "bad url" }, 400);
 
   const props = { "名前": { title: [{ text: { content: body.name } }] } };
   if (body.lastDate) props["最終メンテ日"] = { date: { start: body.lastDate } };
@@ -26,7 +27,7 @@ export async function onRequestPost({ request, env }) {
     body: JSON.stringify({ parent: { database_id: DB_ID }, properties: props }),
   });
   if (!res.ok) {
-    console.log("notion error", res.status, await res.text());
+    console.warn("Notion create request failed", res.status);
     return json({ error: "notion", status: res.status }, 502);
   }
   return json({ ok: true });
@@ -35,6 +36,19 @@ export async function onRequestPost({ request, env }) {
 function json(obj, status = 200) {
   return new Response(JSON.stringify(obj), {
     status,
-    headers: { "Content-Type": "application/json; charset=utf-8" },
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": "no-store",
+    },
   });
+}
+
+function isHttpUrl(value) {
+  if (typeof value !== "string") return false;
+  try {
+    const url = new URL(value);
+    return (url.protocol === "http:" || url.protocol === "https:") && Boolean(url.hostname);
+  } catch {
+    return false;
+  }
 }

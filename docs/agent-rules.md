@@ -27,13 +27,13 @@ Notion「定期メンテ」DB と連動する、家のモノの定期お手入�
 ## 環境変数（Cloudflare Pages の設定で登録）
 
 - `NOTION_TOKEN`（必須）… Notion統合トークン。
-- `APP_PASSCODE`（任意）… 設定すると合言葉ガードが有効。未設定なら誰でもアクセス可。
-  - ローカル開発(`.dev.vars`)では未設定＝認証なし。
+- `APP_PASSCODE`（必須）… Cloudflare Pages の暗号化Secret。未設定・空・空白のみ・文字列以外の場合は API 全体が `503` で拒否され、合言葉の未送信・不一致は `401` で拒否される。
+  - ローカル開発も認証を省略しない。`.dev.vars` または `wrangler pages dev --binding APP_PASSCODE=<テスト用合言葉>` で設定する。
 
 ## ローカル開発・テスト
 
 ```powershell
-# .dev.vars に NOTION_TOKEN を入れて（.gitignore 済み）
+# .dev.vars に NOTION_TOKEN と APP_PASSCODE を設定（.gitignore 済み）。認証設定がない場合は API が fail closed する。
 cd c:\work\Claude\mente-tracker
 wrangler pages dev . --port 8788 --compatibility-date 2024-01-01
 # → http://127.0.0.1:8788

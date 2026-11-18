@@ -25,7 +25,8 @@ export async function onRequestPost({ request, env }) {
     props["名前"] = { title: body.name ? [{ text: { content: body.name } }] : [] };
   }
   if ("url" in body) {
-    if (body.url && !/^https?:\/\//i.test(body.url)) return json({ error: "bad url" }, 400);
+    if (body.url !== null && body.url !== "" && !isHttpUrl(body.url))
+      return json({ error: "bad url" }, 400);
     props["取説_お手入れ"] = { url: body.url || null };
   }
   if (Object.keys(props).length === 0) return json({ error: "no fields" }, 400);
@@ -40,7 +41,7 @@ export async function onRequestPost({ request, env }) {
     body: JSON.stringify({ properties: props }),
   });
   if (!res.ok) {
-    console.log("notion error", res.status, await res.text());
+    console.warn("Notion update request failed", res.status);
     return json({ error: "notion", status: res.status }, 502);
   }
   return json({ ok: true });
@@ -49,6 +50,19 @@ export async function onRequestPost({ request, env }) {
 function json(obj, status = 200) {
   return new Response(JSON.stringify(obj), {
     status,
-    headers: { "Content-Type": "application/json; charset=utf-8" },
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": "no-store",
+    },
   });
+}
+
+function isHttpUrl(value) {
+  if (typeof value !== "string") return false;
+  try {
+    const url = new URL(value);
+    return (url.protocol === "http:" || url.protocol === "https:") && Boolean(url.hostname);
+  } catch {
+    return false;
+  }
 }

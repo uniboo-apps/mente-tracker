@@ -7,23 +7,60 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
-          node-version: "20"
-      - name: Create project if missing & deploy
+          node-version: "24.22.3"
+      - name: Verify existing Pages secrets
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 3441724797f692af21f432e8625165d9
           NAME: ${{ github.event.repository.name }}
-          NOTION_TOKEN: ${{ secrets.MENTE_NOTION_TOKEN }}
           APP_PASSCODE: ${{ secrets.APP_PASSCODE }}
         run: |
           if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
-            echo "::warning::CLOUDFLARE_API_TOKEN not set - skipping deploy."
-            exit 0
+            echo "::error::CLOUDFLARE_API_TOKEN is not set; refusing deployment."
+            exit 1
           fi
-          npx -y wrangler@4 pages project create "$NAME" --production-branch=main || true
+          if [ -z "$APP_PASSCODE" ]; then
+            echo "::error::APP_PASSCODE is not set; refusing deployment."
+            exit 1
+          fi
+          if ! pages_secrets="$(npx -y wrangler@4 pages secret list --project-name="$NAME" 2>/dev/null)"; then
+            echo "::error::Could not read existing Cloudflare Pages secret names; refusing deployment."
+            exit 1
+          fi
+          for required in APP_PASSCODE NOTION_TOKEN; do
+            if ! printf '%s\n' "$pages_secrets" | grep -Eq "(^|[^A-Za-z0-9_])${required}([^A-Za-z0-9_]|$)"; then
+              echo "::error::Required Cloudflare Pages secret is missing: $required; refusing deployment."
+              exit 1
+            fi
+          done
+      - name: Verify current production API and Notion access
+        env:
+          APP_PASSCODE: ${{ secrets.APP_PASSCODE }}
+          BASE_URL: https://mente-tracker.pages.dev
+        run: |
+          node --input-type=module <<'NODE'
+          const passcode = process.env.APP_PASSCODE;
+          if (!passcode || passcode.trim() === "") throw new Error("APP_PASSCODE is unavailable for preflight");
+          const response = await fetch(`${process.env.BASE_URL}/api/list`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "x-app-pass": passcode },
+            body: "{}",
+            signal: AbortSignal.timeout(15000),
+          });
+          if (response.status !== 200) throw new Error(`Current production list returned HTTP ${response.status}; refusing deployment`);
+          const result = await response.json();
+          if (!Array.isArray(result.items)) throw new Error("Current production list response is invalid; refusing deployment");
+          console.log("Current production authentication and Notion read preflight passed.");
+          NODE
+      - name: Deploy approved public files
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 3441724797f692af21f432e8625165d9
+          NAME: ${{ github.event.repository.name }}
+        run: |
           # wrangler pages deploy publishes every file in its directory. Collect only
           # approved public files in _site (security review fix, 2026-07-11). Add new
           # public files to the copy list above before deploying them.
@@ -31,18 +68,43 @@ jobs:
           cp index.html 404.html manifest.json sw.js icon-192.png icon-512.png _site/
           cp -r functions _site/functions
           npx -y wrangler@4 pages deploy _site --project-name="$NAME" --branch=main --commit-dirty=true
-          # Set runtime secrets on Cloudflare Pages (idempotent)
-          if [ -n "$NOTION_TOKEN" ]; then
-            printf '%s' "$NOTION_TOKEN" | npx -y wrangler@4 pages secret put NOTION_TOKEN --project-name="$NAME"
-          fi
-          if [ -n "$APP_PASSCODE" ]; then
-            printf '%s' "$APP_PASSCODE" | npx -y wrangler@4 pages secret put APP_PASSCODE --project-name="$NAME"
-          fi
+
+      - name: Verify production API authentication and list
+        env:
+          APP_PASSCODE: ${{ secrets.APP_PASSCODE }}
+          BASE_URL: https://mente-tracker.pages.dev
+        run: |
+          node --input-type=module <<'NODE'
+          const passcode = process.env.APP_PASSCODE;
+          if (!passcode || passcode.trim() === "") throw new Error("APP_PASSCODE is unavailable for smoke test");
+          const url = `${process.env.BASE_URL}/api/list`;
+          async function query(pass) {
+            const headers = { "Content-Type": "application/json" };
+            if (pass !== null) headers["x-app-pass"] = pass;
+            return fetch(url, {
+              method: "POST",
+              headers,
+              body: "{}",
+              signal: AbortSignal.timeout(15000),
+            });
+          }
+          const unauthenticated = await query(null);
+          if (unauthenticated.status !== 401) throw new Error(`Unauthenticated API returned HTTP ${unauthenticated.status}`);
+          let wrongPasscode = `invalid-smoke-${crypto.randomUUID()}`;
+          if (wrongPasscode === passcode) wrongPasscode += "-x";
+          const incorrect = await query(wrongPasscode);
+          if (incorrect.status !== 401) throw new Error(`Incorrect passcode returned HTTP ${incorrect.status}`);
+          const authenticated = await query(passcode);
+          if (authenticated.status !== 200) throw new Error(`Authenticated list returned HTTP ${authenticated.status}`);
+          const result = await authenticated.json();
+          if (!Array.isArray(result.items)) throw new Error("Authenticated list response is invalid");
+          console.log(`Production auth/list smoke test passed (${result.items.length} items).`);
+          NODE
 
       # Keep commit logging in this job so it runs only after a successful deploy.
       - name: Send commits to Notion
         if: ${{ success() }}
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           NOTION_COMMITS_DB_ID: ${{ vars.NOTION_COMMITS_DB_ID }}

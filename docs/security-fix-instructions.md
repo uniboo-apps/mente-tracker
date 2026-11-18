@@ -1,5 +1,7 @@
 ﻿> 分類: 限定タスク計画／当時の記録（完了未判定）。現在の入口から先にルールを確認する。通常作業の行動許可は [共通方針](C:/work/Claude/docs/agent-rules/workspace.md) だけが与え、repo 固有の例外・追加条件は [固有ルール](agent-rules.md)。本書は許可を与えない。本文のフェーズ順・対象制限は明示再開時にだけ適用し、恒久的なデータ保護・製品契約は関連機能の変更前に確認する。
 
+> 更新 2026-11-19: 本書の当時のデプロイ手順と合言葉例は現行実装ではありません。Cloudflare Pages Secret の値を書き直さず、デプロイ前に名前だけを確認します。認証仕様は fail-closed 実装と [固有ルール](agent-rules.md) を参照してください。
+
 # mente-tracker セキュリティ・品質改善 実装指示書
 
 2026-07-11 のコードレビューで見つかった改善点の実装手順。上から順に実施する。
@@ -12,9 +14,8 @@
 - コミットメッセージは **ASCII（英数字）のみ**（非ASCIIだと Cloudflare Pages デプロイが失敗する）
 - commit/push は [共通正本](C:/work/Claude/docs/agent-rules/workspace.md) に従う。
 - トークン・合言葉の値をチャット・ログ・コミットに出さないこと
-- ⚠️ **この指示書（docs/）を単独で先に push しないこと**。現行の deploy.yml は
-  リポジトリ全量を公開するため、指示書まで本番公開されてしまう。
-  必ず【必須1】の deploy.yml 修正と同じコミット（または同じ push）に含めること
+- ⚠️ この指示書を公開ファイルの許可リストに追加しないこと。現行 `deploy.yml` は
+  `_site/` の許可済みファイルだけを公開し、`docs/` はデプロイ対象に含めない。
 
 ## 背景（何が問題か）
 
@@ -40,40 +41,17 @@
 公開してよいファイルは以下だけ:
 
 - `index.html`
+- `404.html`
 - `manifest.json`
 - `sw.js`
 - `icon-192.png`
 - `icon-512.png`
 - `functions/` ディレクトリ（Pages Functions のソース。wrangler がワーカーにコンパイルするもので、静的配信はされない）
 
-deploy ステップの run を次のように書き換える（プロジェクト作成・secret put の部分は現状維持）:
-
-```yaml
-      - name: Create project if missing & deploy
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: 3441724797f692af21f432e8625165d9
-          NAME: ${{ github.event.repository.name }}
-          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
-          APP_PASSCODE: ${{ secrets.APP_PASSCODE }}
-        run: |
-          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
-            echo "::warning::CLOUDFLARE_API_TOKEN not set - skipping deploy."
-            exit 0
-          fi
-          npx -y wrangler@4 pages project create "$NAME" --production-branch=main || true
-          # Allowlist deploy: only copy public assets. Add new public files here.
-          mkdir -p _site
-          cp index.html manifest.json sw.js icon-192.png icon-512.png _site/
-          cp -r functions _site/functions
-          npx -y wrangler@4 pages deploy _site --project-name="$NAME" --branch=main --commit-dirty=true
-          if [ -n "$NOTION_TOKEN" ]; then
-            printf '%s' "$NOTION_TOKEN" | npx -y wrangler@4 pages secret put NOTION_TOKEN --project-name="$NAME"
-          fi
-          if [ -n "$APP_PASSCODE" ]; then
-            printf '%s' "$APP_PASSCODE" | npx -y wrangler@4 pages secret put APP_PASSCODE --project-name="$NAME"
-          fi
-```
+deploy 前に Cloudflare API 認証と Pages Secret の名前だけを読み取り、`APP_PASSCODE` と
+`NOTION_TOKEN` が確認できない場合は失敗終了する。Cloudflare Pages Secret の `put` / `delete` /
+`bulk` やプロジェクト作成は行わず、現在のプロジェクト設定を維持する。公開ファイルは
+上記の許可リストだけを `_site/` に集めてデプロイする。
 
 コメントとして「wrangler pages deploy はディレクトリ全ファイルを公開する。
 公開してよいファイルだけ _site/ に集めてデプロイする（2026-07-11 レビューで是正）。
@@ -128,15 +106,19 @@ detail が無くなっても「失敗: notion」と表示されるだけで動�
 ```js
 // functions/api/_middleware.js — /api/* 全体の合言葉ガード
 export async function onRequest({ request, env, next }) {
-  if (env.APP_PASSCODE) {
-    const got = request.headers.get("x-app-pass") || "";
-    if (got !== env.APP_PASSCODE) {
-      return new Response(JSON.stringify({ error: "unauthorized" }), {
-        status: 401,
-        headers: { "Content-Type": "application/json; charset=utf-8" },
-      });
-    }
+  const passcode = env?.APP_PASSCODE;
+  if (typeof passcode !== "string" || passcode.trim() === "" || passcode.length > 1024 || /[\u0000-\u001f\u007f]/.test(passcode)) {
+    return new Response(JSON.stringify({ error: "auth_unavailable" }), {
+      status: 503,
+      headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" },
+    });
   }
+  const got = request.headers.get("x-app-pass");
+  if (got === null || got !== passcode)
+    return new Response(JSON.stringify({ error: "unauthorized" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" },
+    });
   return next();
 }
 ```
@@ -156,7 +138,7 @@ export async function onRequest({ request, env, next }) {
 
 ### 1. ローカル確認（push 前）
 
-`.dev.vars` に NOTION_TOKEN がある前提で:
+`.dev.vars` に NOTION_TOKEN と APP_PASSCODE がある前提で:
 
 ```powershell
 cd C:\work\Claude\mente-tracker
@@ -165,11 +147,11 @@ cd C:\work\Claude\mente-tracker
 
 wrangler pages dev で起動し、以下を確認:
 
-- `POST http://127.0.0.1:8788/api/list` が items を返す（一覧が壊れていない）
+- `POST http://127.0.0.1:8788/api/list` が正しい `x-app-pass` で items を返す（一覧が壊れていない）
+- 合言葉なし／誤りは `401`、APP_PASSCODE 未設定・不正は `503` で拒否する
 - `POST /api/update` に `{"id":"../databases/xxx"}` を送ると 400 `bad id` が返る
 - （推奨1実施時）`url: "javascript:alert(1)"` で update すると 400 `bad url` が返る
-- （推奨3実施時）_middleware 経由でも API が正常動作する
-  （ローカルは APP_PASSCODE 未設定＝認証なしで通ればOK）
+- `/api/*` の全経路が `_middleware.js` を通り、認証なしでは Notion を呼び出さない
 
 ローカル確認で wrangler pages dev に渡すディレクトリは `.`（リポジトリ直下）のままでよい。
 アローリストはデプロイ時のみの話。
